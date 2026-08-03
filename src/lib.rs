@@ -349,6 +349,14 @@ impl Mux {
         }
     }
 
+    /// Returns the ids of all panes (nodes holding a view).
+    pub fn panes(&self) -> Vec<Id> {
+        self.root
+            .descendants(&self.tree)
+            .filter(|id| self.tree.get(*id).is_some_and(|n| n.get().has_view()))
+            .collect()
+    }
+
     /// Returns the current focused view id.
     /// By default the newest node added to the multiplexer gets focused.
     /// Focus can also be changed by the user.
