@@ -31,24 +31,35 @@ impl Mux {
             }
             let parent = id.ancestors(&self.tree).nth(1).unwrap();
             id.detach(&mut self.tree);
+            // Drop the view now: the detached node stays in the arena (ids
+            // are never reused), but keeping the view alive would leak its
+            // resources (e.g. background threads).
+            if let Some(node) = self.tree.get_mut(id) {
+                node.get_mut().view = None;
+            }
             self.invalidated = true;
             if let Some(anker) = parent.ancestors(&self.tree).nth(1) {
                 if anker.children(&self.tree).next().unwrap() == parent {
                     parent.detach(&mut self.tree);
                     anker.prepend(sib_id, &mut self.tree);
-                    self.focus = sib_id;
-                    Ok(id)
                 } else {
                     parent.detach(&mut self.tree);
                     anker.append(sib_id, &mut self.tree);
-                    self.focus = sib_id;
-                    Ok(id)
                 }
             } else {
+                // Detach from the removed parent: a stale ancestor chain
+                // would misroute later add_node_id calls (they attach
+                // relative to the parent, ending up outside the tree).
+                sib_id.detach(&mut self.tree);
                 self.root = sib_id;
-                self.focus = sib_id;
-                Ok(id)
             }
+            // The sibling may be a split (intermediate node without a view):
+            // focus must point at a pane, otherwise events go nowhere.
+            self.focus = sib_id
+                .descendants(&self.tree)
+                .find(|i| self.tree.get(*i).is_some_and(|n| n.get().has_view()))
+                .unwrap_or(sib_id);
+            Ok(id)
         } else {
             Err(RemoveViewError::InvalidId { id })
         }
@@ -191,6 +202,23 @@ impl Mux {
                 SearchPath::Down | SearchPath::Right => node_id.append(new_node, &mut self.tree),
             }
             self.tree.get_mut(node_id).unwrap().get_mut().orientation = orientation;
+        } else if node_id == id {
+            // The target is the root pane (a leaf after the tree collapsed
+            // to a single view): grow a new split root on top of it.
+            let new_root = self
+                .tree
+                .new_node(Node::new_empty(orientation, self.default_split_ratio));
+            match direction {
+                SearchPath::Up | SearchPath::Left => {
+                    new_root.append(new_node, &mut self.tree);
+                    new_root.append(node_id, &mut self.tree);
+                }
+                SearchPath::Down | SearchPath::Right => {
+                    new_root.append(node_id, &mut self.tree);
+                    new_root.append(new_node, &mut self.tree);
+                }
+            }
+            self.root = new_root;
         } else {
             // First element is node itself, second direct parent
             let parent = node_id;

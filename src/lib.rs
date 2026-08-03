@@ -642,6 +642,59 @@ mod tree {
     }
 
     #[test]
+    fn test_remove_drops_view_and_focuses_a_pane() {
+        use cursive_core::view::Nameable;
+        use cursive_core::views::Button;
+        use std::sync::Arc;
+
+        let alive = Arc::new(());
+        let pane = |tag: &str| Button::new("b", |_| {}).with_name(tag.to_string());
+
+        let mut mux = Mux::new();
+        let a = mux.add_right_of(pane("a"), mux.root).unwrap();
+        let b = mux.add_right_of(pane("b"), a).unwrap();
+        let c = mux.add_below(pane("c"), b).unwrap();
+
+        struct DropProbe(Arc<()>);
+        impl View for DropProbe {
+            fn draw(&self, _: &cursive_core::Printer) {}
+        }
+        let d = mux.add_below(DropProbe(alive.clone()), c).unwrap();
+        assert_eq!(Arc::strong_count(&alive), 2);
+
+        // Removing must drop the contained view, not merely detach it
+        mux.remove_id(d).unwrap();
+        assert_eq!(Arc::strong_count(&alive), 1);
+
+        // Removing a pane whose sibling is a split must focus a pane
+        // (a node with a view), not the split node itself
+        mux.remove_id(a).unwrap();
+        let focus = mux.focus();
+        assert!(mux.tree.get(focus).unwrap().get().has_view());
+    }
+
+    #[test]
+    fn test_add_after_root_collapse() {
+        use cursive_core::view::Nameable;
+        use cursive_core::views::Button;
+
+        let pane = |tag: &str| Button::new("b", |_| {}).with_name(tag.to_string());
+
+        // Replace the only pane: add-new-then-remove-old collapses the root
+        let mut mux = Mux::new();
+        let a = mux.add_right_of(pane("a"), mux.root).unwrap();
+        let b = mux.add_right_of(pane("b"), a).unwrap();
+        mux.remove_id(a).unwrap();
+        assert_eq!(mux.panes(), vec![b]);
+
+        // Further adds must stay inside the (collapsed) tree
+        let c = mux.add_right_of(pane("c"), b).unwrap();
+        assert_eq!(mux.panes(), vec![b, c]);
+        let d = mux.add_below(pane("d"), c).unwrap();
+        assert_eq!(mux.panes(), vec![b, c, d]);
+    }
+
+    #[test]
     fn test_focus_view() {
         use cursive_core::view::{Nameable, Selector};
         use cursive_core::views::Button;
