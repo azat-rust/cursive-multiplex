@@ -576,35 +576,47 @@ impl Mux {
                             ));
                     }
                 }
+                // The separator segment bordering the focused pane is
+                // highlighted (only where the pane touches the line)
+                let hl = cursive_core::theme::ColorStyle::front(
+                    cursive_core::theme::PaletteColor::Highlight,
+                );
+                let segment = self.separator_focus_segment(root);
                 match self.tree.get(root).unwrap().get().orientation {
                     Orientation::Vertical => {
                         if printer.size.y > 1 {
-                            printer.print_hline(
-                                Vec2::new(
-                                    0,
-                                    Mux::add_offset(
-                                        (printer.size.y as f32 * root_data.split_ratio) as usize,
-                                        root_data.split_ratio_offset,
-                                    ),
-                                ),
-                                printer.size.x,
-                                "─",
+                            let y = Mux::add_offset(
+                                (printer.size.y as f32 * root_data.split_ratio) as usize,
+                                root_data.split_ratio_offset,
                             );
+                            let len = printer.size.x;
+                            let (s, e) = match segment {
+                                Some((s, e)) => (s.min(len), e.min(len)),
+                                None => (0, 0),
+                            };
+                            printer.print_hline(Vec2::new(0, y), s, "\u{2500}");
+                            printer.with_color(hl, |p| {
+                                p.print_hline(Vec2::new(s, y), e - s, "\u{2500}")
+                            });
+                            printer.print_hline(Vec2::new(e, y), len - e, "\u{2500}");
                         }
                     }
                     Orientation::Horizontal => {
                         if printer.size.x > 1 {
-                            printer.print_vline(
-                                Vec2::new(
-                                    Mux::add_offset(
-                                        (printer.size.x as f32 * root_data.split_ratio) as usize,
-                                        root_data.split_ratio_offset,
-                                    ),
-                                    0,
-                                ),
-                                printer.size.y,
-                                "│",
+                            let x = Mux::add_offset(
+                                (printer.size.x as f32 * root_data.split_ratio) as usize,
+                                root_data.split_ratio_offset,
                             );
+                            let len = printer.size.y;
+                            let (s, e) = match segment {
+                                Some((s, e)) => (s.min(len), e.min(len)),
+                                None => (0, 0),
+                            };
+                            printer.print_vline(Vec2::new(x, 0), s, "\u{2502}");
+                            printer.with_color(hl, |p| {
+                                p.print_vline(Vec2::new(x, s), e - s, "\u{2502}")
+                            });
+                            printer.print_vline(Vec2::new(x, e), len - e, "\u{2502}");
                         }
                     }
                 }
@@ -697,6 +709,34 @@ mod tree {
         mux.remove_id(a).unwrap();
         let focus = mux.focus();
         assert!(mux.tree.get(focus).unwrap().get().has_view());
+    }
+
+    #[test]
+    fn test_separator_focus_adjacency() {
+        use cursive_core::Vec2;
+        use cursive_core::view::Nameable;
+        use cursive_core::views::Button;
+
+        let pane = |t: &str| Button::new("b", |_| {}).with_name(t.to_string());
+        // [a | [b / c]]: root splits horizontally, the right half vertically
+        let mut mux = Mux::new();
+        let a = mux.add_right_of(pane("a"), mux.root).unwrap();
+        let b = mux.add_right_of(pane("b"), a).unwrap();
+        let c = mux.add_below(pane("c"), b).unwrap();
+        mux.layout(Vec2::new(180, 50));
+
+        let root = mux.root;
+        let right_split = c.ancestors(&mux.tree).nth(1).unwrap();
+
+        // c touches the lower half of the root separator and the whole
+        // vertical one; a touches the full root separator only
+        mux.set_focus(c);
+        assert_eq!(mux.separator_focus_segment(root), Some((26, 50)));
+        assert_eq!(mux.separator_focus_segment(right_split), Some((0, 89)));
+
+        mux.set_focus(a);
+        assert_eq!(mux.separator_focus_segment(root), Some((0, 50)));
+        assert_eq!(mux.separator_focus_segment(right_split), None);
     }
 
     #[test]

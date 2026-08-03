@@ -54,6 +54,50 @@ impl Mux {
         None
     }
 
+    /// The segment of `split`'s separator adjacent to the focused pane (the
+    /// pane's edge touches the line), as a (start, end) range along the
+    /// separator in the split's local coordinates.
+    pub(crate) fn separator_focus_segment(&self, split: Id) -> Option<(usize, usize)> {
+        let f = self.tree.get(self.focus)?.get();
+        let (fpos, fsize) = (f.total_position()?, f.total_size?);
+        let s = self.tree.get(split).unwrap().get();
+        let (origin, size) = (s.split_origin?, s.total_size?);
+        match s.orientation {
+            Orientation::Horizontal => {
+                let sep_x = origin.x
+                    + Mux::add_offset(
+                        (size.x as f32 * s.split_ratio) as usize,
+                        s.split_ratio_offset,
+                    );
+                if fpos.x + fsize.x != sep_x && fpos.x != sep_x + 1 {
+                    return None;
+                }
+                let lo = fpos.y.max(origin.y);
+                let hi = (fpos.y + fsize.y).min(origin.y + size.y);
+                if lo >= hi {
+                    return None;
+                }
+                Some((lo - origin.y, hi - origin.y))
+            }
+            Orientation::Vertical => {
+                let sep_y = origin.y
+                    + Mux::add_offset(
+                        (size.y as f32 * s.split_ratio) as usize,
+                        s.split_ratio_offset,
+                    );
+                if fpos.y + fsize.y != sep_y && fpos.y != sep_y + 1 {
+                    return None;
+                }
+                let lo = fpos.x.max(origin.x);
+                let hi = (fpos.x + fsize.x).min(origin.x + size.x);
+                if lo >= hi {
+                    return None;
+                }
+                Some((lo - origin.x, hi - origin.x))
+            }
+        }
+    }
+
     /// Moves the separator of `split` to the mouse position (clamped so both
     /// children keep at least one cell).
     pub(crate) fn drag_separator(&mut self, split: Id, mp: Vec2) {

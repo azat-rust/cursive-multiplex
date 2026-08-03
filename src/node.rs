@@ -33,6 +33,10 @@ impl Node {
         }
     }
 
+    pub(crate) fn total_position(&self) -> Option<Vec2> {
+        self.total_position
+    }
+
     pub(crate) fn click(&self, mp: Vec2) -> bool {
         if let Some(pos) = self.total_position {
             if let Some(total_size) = self.total_size {
