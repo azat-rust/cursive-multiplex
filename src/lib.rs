@@ -115,8 +115,18 @@ impl View for Mux {
         Ok(EventResult::consumed())
     }
 
-    fn focus_view(&mut self, _: &Selector) -> Result<EventResult, ViewNotFound> {
-        Ok(EventResult::consumed())
+    fn focus_view(&mut self, slct: &Selector) -> Result<EventResult, ViewNotFound> {
+        let nodes: Vec<Id> = self.root.descendants(&self.tree).collect();
+        for node in nodes {
+            if let Some(node_c) = self.tree.get_mut(node) {
+                if let Ok(result) = node_c.get_mut().focus_view(slct) {
+                    self.focus = node;
+                    self.invalidated = true;
+                    return Ok(result);
+                }
+            }
+        }
+        Err(ViewNotFound)
     }
 
     fn call_on_any<'a>(&mut self, slct: &Selector, cb: AnyCb<'a>) {
@@ -621,6 +631,27 @@ mod tree {
         let node3 = mux.add_left_of(DummyView, node2).unwrap();
 
         mux.switch_views(node1, node3).unwrap();
+    }
+
+    #[test]
+    fn test_focus_view() {
+        use cursive_core::view::{Nameable, Selector};
+        use cursive_core::views::Button;
+
+        let mut mux = Mux::new();
+        let node1 = mux
+            .add_right_of(Button::new("b1", |_| {}).with_name("v1"), mux.root)
+            .unwrap();
+        let node2 = mux
+            .add_right_of(Button::new("b2", |_| {}).with_name("v2"), node1)
+            .unwrap();
+        assert_eq!(mux.focus(), node2);
+
+        mux.focus_view(&Selector::Name("v1")).unwrap();
+        assert_eq!(mux.focus(), node1);
+
+        assert!(mux.focus_view(&Selector::Name("nonexistent")).is_err());
+        assert_eq!(mux.focus(), node1);
     }
 
     #[test]

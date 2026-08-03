@@ -168,6 +168,17 @@ impl Node {
         }
     }
 
+    pub(crate) fn focus_view(
+        &mut self,
+        slct: &Selector,
+    ) -> Result<EventResult, cursive_core::view::ViewNotFound> {
+        if let Some(view) = self.view.as_mut() {
+            view.focus_view(slct)
+        } else {
+            Err(cursive_core::view::ViewNotFound)
+        }
+    }
+
     pub(crate) fn call_on_any<'a>(&mut self, slct: &Selector, cb: AnyCb<'a>) {
         if let Some(view) = self.view.as_mut() {
             view.call_on_any(slct, cb);
