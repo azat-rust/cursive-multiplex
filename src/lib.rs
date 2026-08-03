@@ -76,6 +76,7 @@ pub struct Mux {
     resize_down: Event,
     zoom: Event,
     zoomed: bool,
+    resize_drag: Option<Id>,
 }
 
 impl View for Mux {
@@ -144,18 +145,41 @@ impl View for Mux {
         if let Event::Mouse {
             offset,
             position,
-            event: MouseEvent::Press(MouseButton::Left),
+            event: mouse_event,
         } = evt
         {
             if let Some(off_pos) = position.checked_sub(offset) {
-                if let Some(pane) = self.clicked_pane(off_pos) {
-                    if let Ok(res) = self.tree.get_mut(pane).unwrap().get_mut().take_focus() {
-                        if self.focus != pane {
-                            result = res;
-                            self.focus = pane;
-                            self.invalidated = true;
+                match mouse_event {
+                    // Dragging a separator resizes the split it belongs to
+                    MouseEvent::Press(MouseButton::Left) => {
+                        if let Some(split) = self.clicked_separator(off_pos) {
+                            self.resize_drag = Some(split);
+                            return EventResult::consumed();
+                        }
+                        if let Some(pane) = self.clicked_pane(off_pos) {
+                            if let Ok(res) =
+                                self.tree.get_mut(pane).unwrap().get_mut().take_focus()
+                            {
+                                if self.focus != pane {
+                                    result = res;
+                                    self.focus = pane;
+                                    self.invalidated = true;
+                                }
+                            }
                         }
                     }
+                    MouseEvent::Hold(MouseButton::Left) => {
+                        if let Some(split) = self.resize_drag {
+                            self.drag_separator(split, off_pos);
+                            return EventResult::consumed();
+                        }
+                    }
+                    MouseEvent::Release(MouseButton::Left) => {
+                        if self.resize_drag.take().is_some() {
+                            return EventResult::consumed();
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -213,6 +237,7 @@ impl Mux {
             resize_down: Event::Ctrl(Key::Down),
             zoom: Event::CtrlChar('x'),
             zoomed: false,
+            resize_drag: None,
         }
     }
 
@@ -439,18 +464,19 @@ impl Mux {
                         });
                     }
                 }
-                self.tree
-                    .get_mut(root)
-                    .unwrap()
-                    .get_mut()
-                    .layout_view(constraint);
+                {
+                    let node = self.tree.get_mut(root).unwrap().get_mut();
+                    node.layout_view(constraint);
+                    node.split_origin = Some(start_point);
+                }
                 self.rec_layout(left, const1, start_point);
                 self.rec_layout(
                     right,
                     const2,
+                    // One cell past the separator line, as rec_draw renders it
                     match orit {
-                        Orientation::Vertical => start_point + const1.keep_y(),
-                        Orientation::Horizontal => start_point + const1.keep_x(),
+                        Orientation::Vertical => start_point + const1.keep_y() + Vec2::new(0, 1),
+                        Orientation::Horizontal => start_point + const1.keep_x() + Vec2::new(1, 0),
                     },
                 );
             }
@@ -671,6 +697,51 @@ mod tree {
         mux.remove_id(a).unwrap();
         let focus = mux.focus();
         assert!(mux.tree.get(focus).unwrap().get().has_view());
+    }
+
+    #[test]
+    fn test_separator_drag_resize() {
+        use cursive_core::Vec2;
+        use cursive_core::event::{MouseButton, MouseEvent};
+        use cursive_core::view::Nameable;
+        use cursive_core::views::Button;
+
+        let pane = |t: &str| Button::new("b", |_| {}).with_name(t.to_string());
+        let mut mux = Mux::new();
+        let a = mux.add_right_of(pane("a"), mux.root).unwrap();
+        let b = mux.add_right_of(pane("b"), a).unwrap();
+        mux.layout(Vec2::new(180, 50));
+
+        let mouse = |x, y, event| Event::Mouse {
+            offset: Vec2::zero(),
+            position: Vec2::new(x, y),
+            event,
+        };
+
+        // The separator is at x = 180 * 0.5; press on it starts the drag
+        // (and must not move the focus), hold moves it, release ends it
+        assert!(matches!(
+            mux.on_event(mouse(90, 10, MouseEvent::Press(MouseButton::Left))),
+            EventResult::Consumed(_)
+        ));
+        assert_eq!(mux.focus(), b);
+        assert!(matches!(
+            mux.on_event(mouse(120, 10, MouseEvent::Hold(MouseButton::Left))),
+            EventResult::Consumed(_)
+        ));
+        assert!(matches!(
+            mux.on_event(mouse(120, 10, MouseEvent::Release(MouseButton::Left))),
+            EventResult::Consumed(_)
+        ));
+
+        mux.layout(Vec2::new(180, 50));
+        let left = mux.tree.get(a).unwrap().get();
+        assert_eq!(left.total_size.unwrap().x, 120);
+
+        // Not on the separator: no drag, the click focuses the pane
+        assert!(mux.clicked_separator(Vec2::new(50, 10)).is_none());
+        mux.on_event(mouse(50, 10, MouseEvent::Press(MouseButton::Left)));
+        assert_eq!(mux.focus(), a);
     }
 
     #[test]

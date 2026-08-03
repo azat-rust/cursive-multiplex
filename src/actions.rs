@@ -16,6 +16,73 @@ impl Mux {
         None
     }
 
+    /// The split node whose separator line is at `mp`, if any.
+    pub(crate) fn clicked_separator(&self, mp: Vec2) -> Option<Id> {
+        if self.zoomed {
+            return None;
+        }
+        for node in self.root.descendants(&self.tree) {
+            let data = self.tree.get(node).unwrap().get();
+            if data.has_view() || node.children(&self.tree).count() != 2 {
+                continue;
+            }
+            let (Some(origin), Some(size)) = (data.split_origin, data.total_size) else {
+                continue;
+            };
+            let sep = match data.orientation {
+                Orientation::Horizontal => Mux::add_offset(
+                    (size.x as f32 * data.split_ratio) as usize,
+                    data.split_ratio_offset,
+                ),
+                Orientation::Vertical => Mux::add_offset(
+                    (size.y as f32 * data.split_ratio) as usize,
+                    data.split_ratio_offset,
+                ),
+            };
+            let hit = match data.orientation {
+                Orientation::Horizontal => {
+                    mp.x == origin.x + sep && mp.y >= origin.y && mp.y < origin.y + size.y
+                }
+                Orientation::Vertical => {
+                    mp.y == origin.y + sep && mp.x >= origin.x && mp.x < origin.x + size.x
+                }
+            };
+            if hit {
+                return Some(node);
+            }
+        }
+        None
+    }
+
+    /// Moves the separator of `split` to the mouse position (clamped so both
+    /// children keep at least one cell).
+    pub(crate) fn drag_separator(&mut self, split: Id, mp: Vec2) {
+        let Some(data) = self.tree.get_mut(split).map(|n| n.get_mut()) else {
+            return;
+        };
+        let (Some(origin), Some(size)) = (data.split_origin, data.total_size) else {
+            return;
+        };
+        let (axis_len, base, pos) = match data.orientation {
+            Orientation::Horizontal => (
+                size.x,
+                (size.x as f32 * data.split_ratio) as i16,
+                mp.x as i16 - origin.x as i16,
+            ),
+            Orientation::Vertical => (
+                size.y,
+                (size.y as f32 * data.split_ratio) as i16,
+                mp.y as i16 - origin.y as i16,
+            ),
+        };
+        if axis_len < 3 {
+            return;
+        }
+        let desired = pos.clamp(1, axis_len as i16 - 2);
+        data.split_ratio_offset = desired - base;
+        self.invalidated = true;
+    }
+
     pub(crate) fn zoom_focus(&mut self) -> EventResult {
         self.zoomed = !self.zoomed;
         self.invalidated = true;

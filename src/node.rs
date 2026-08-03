@@ -11,6 +11,9 @@ pub(crate) struct Node {
     total_position: Option<Vec2>,
     size: Option<Vec2>,
     pub(crate) total_size: Option<Vec2>,
+    // Origin of a split node's region; kept apart from total_position,
+    // which marks clickable panes (leaves) only.
+    pub(crate) split_origin: Option<Vec2>,
 }
 
 impl Node {
@@ -26,6 +29,7 @@ impl Node {
             total_position: None,
             size: None,
             total_size: None,
+            split_origin: None,
         }
     }
 
@@ -112,6 +116,7 @@ impl Node {
             total_position: None,
             size: None,
             total_size: None,
+            split_origin: None,
         }
     }
 
