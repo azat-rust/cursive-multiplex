@@ -108,6 +108,33 @@ fn test_diagonal() {
 }
 
 #[test]
+fn test_move_focus_after_remove() {
+    // The focus-move history must not resurrect removed panes: moving
+    // focus onto a node recorded as a history goal, removing that node,
+    // then moving back used to panic walking the detached node's
+    // (nonexistent) ancestor chain.
+    let mut mux = Mux::new();
+    let a = mux
+        .add_right_of(TextArea::new(), mux.root().build().unwrap())
+        .unwrap();
+    let b = mux.add_right_of(TextArea::new(), a).unwrap();
+    let c = mux.add_below(TextArea::new(), b).unwrap();
+
+    mux.on_event(Event::Alt(Key::Left));
+    assert_eq!(mux.focus(), a); // history now holds (c, a, Left)
+    mux.remove_id(c).unwrap();
+    mux.set_focus(a); // like a mouse click: no history entry
+    match mux.on_event(Event::Alt(Key::Right)) {
+        cursive_core::event::EventResult::Consumed(_) => {
+            assert_eq!(mux.focus(), b);
+        }
+        cursive_core::event::EventResult::Ignored => {
+            assert!(false, "focus move ignored, focus at: {}", mux.focus());
+        }
+    }
+}
+
+#[test]
 fn test_quadratic() {
     // Quadratic test
 

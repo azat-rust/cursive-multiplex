@@ -151,7 +151,12 @@ impl Mux {
     }
 
     fn move_focus_relative(&mut self, direction: Absolute, node: Id, origin: Id) -> EventResult {
-        match self.search_focus_path(direction, node.ancestors(&self.tree).nth(1).unwrap(), node) {
+        // No parent means `node` is the root (lone pane) or has been
+        // detached from the tree: there is nowhere to move focus to.
+        let Some(parent) = node.ancestors(&self.tree).nth(1) else {
+            return EventResult::Ignored;
+        };
+        match self.search_focus_path(direction, parent, node) {
             Ok((path, turn_point)) => {
                 // Traverse the path down again
                 if let Some(focus) = self.traverse_search_path(path, turn_point, direction, origin)

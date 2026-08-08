@@ -59,6 +59,12 @@ impl Mux {
                 .descendants(&self.tree)
                 .find(|i| self.tree.get(*i).is_some_and(|n| n.get().has_view()))
                 .unwrap_or(sib_id);
+            // The focus-move history must not reference detached nodes:
+            // move_focus_relative would jump to them via the history
+            // shortcut and then walk a nonexistent ancestor chain.
+            let attached: Vec<Id> = self.root.descendants(&self.tree).collect();
+            self.history
+                .retain(|(from, to, _)| attached.contains(from) && attached.contains(to));
             Ok(id)
         } else {
             Err(RemoveViewError::InvalidId { id })
